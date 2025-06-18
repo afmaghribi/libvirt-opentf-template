@@ -1,0 +1,88 @@
+terraform {
+  required_providers {
+    libvirt = {
+      source = "dmacvicar/libvirt"
+      version = "0.8.3"
+    }
+  }
+}
+
+provider "libvirt" {
+  uri = "qemu:///system"
+}
+
+{% for vm_name in vm_specs %}
+data "template_file" "user_data_{{ vm_name.hostname }}" {
+  template = file("${path.module}/{{ vm_name.hostname }}.cfg")
+}
+
+resource "libvirt_cloudinit_disk" "user_data_{{ vm_name.hostname }}" {
+  name      = "{{ vm_name.hostname }}.iso"
+  user_data = data.template_file.user_data_{{ vm_name.hostname }}.rendered
+  pool      = "{{ vm_name.image_pool }}"
+}{% endfor %}
+
+{% for network in networks_specs %}
+resource "libvirt_network" "{{ network.name }}" {
+  name      = "{{ network.name }}"
+  mode      = "nat"
+  domain    = "{{ network.name }}-domain"
+  addresses = ["{{ network.subnet }}"]
+  autostart = "true"
+  dhcp {
+    enabled = true
+  }
+  dns {
+    enabled = true
+  }
+}{% endfor %}
+
+{% for vm_name in vm_specs %}{% for disk in vm_name.disks %}{% if disk.device == "vda" %}
+resource "libvirt_volume" "{{ vm_name.hostname }}-{{ disk.device }}" {
+  name             = "{{ vm_name.hostname }}-{{ disk.device }}.img"
+  pool             = "{{ disk.pool }}"
+  base_volume_name = "{{ vm_name.image }}"
+  base_volume_pool = "{{ vm_name.image_pool }}"
+  size             = {{ disk.size * (2**30) }}
+  format           = "qcow2"
+}
+{% else %}
+resource "libvirt_volume" "{{ vm_name.hostname }}-{{ disk.device }}" {
+  name   = "{{ vm_name.hostname }}-{{ disk.device }}.img"
+  pool   = "{{ disk.pool }}"
+  size   = {{ disk.size * (2**30) }}
+  format = "qcow2"
+}{% endif %}{% endfor %}{% endfor %}
+
+{% for vm_name in vm_specs %}
+resource "libvirt_domain" "{{ vm_name.hostname }}" {
+  name       = "{{ vm_name.hostname }}"
+  arch       = "x86_64"
+  vcpu       = {{ vm_name.vcpu }}
+  memory     = {{ vm_name.memory }}
+  qemu_agent = "true"
+  cloudinit = libvirt_cloudinit_disk.user_data_{{ vm_name.hostname }}.id
+  cpu {
+    mode = "host-passthrough"
+  }
+  video {
+    type = "qxl"
+  }
+  {% for interface in vm_name.networks %}
+  network_interface {
+    network_name   = "{{ interface.name }}"
+    hostname       = "{{ vm_name.hostname }}"
+    addresses      = ["{{ interface.ip }}"]
+  }{% endfor %}
+  
+  {% if vm_name.cache == "none" %}
+  xml {
+    xslt = "${file("./templates/disk_caching.xsl")}"
+  }{% else %} {% endif %}
+
+  {% for disk in vm_name.disks %}
+  disk {
+    volume_id = libvirt_volume.{{ vm_name.hostname }}-{{ disk.device }}.id
+  }{% endfor %}
+}
+{% endfor %}
