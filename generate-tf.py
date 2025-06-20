@@ -18,7 +18,15 @@ def render_cloud_init(specs):
             vms["pub_key"] = open(vms["pub_key"],"r").read().strip()
             vms["priv_key"] = vms["pub_key"][:-4]
 
-        output = open("./"+vms['hostname']+".cfg","w")
+        output = open("./"+vms['hostname']+"-user-data.cfg","w")
+        output.write(template_file.render(vms))
+        output.close()
+
+def render_network_config(specs):
+    template_file = Environment(loader=FileSystemLoader("./templates")).get_template("network-config.j2")
+
+    for vms in (specs['vm_specs']):
+        output = open("./"+vms['hostname']+"-network-config.cfg","w")
         output.write(template_file.render(vms))
         output.close()
 
@@ -32,4 +40,5 @@ def render_tf_file(specs):
 if __name__ == "__main__": 
     config = yaml.safe_load(open("tf-specs.yaml","r"))
     render_cloud_init(config['tf_specs'])
+    render_network_config(config['tf_specs'])
     render_tf_file(config['tf_specs'])

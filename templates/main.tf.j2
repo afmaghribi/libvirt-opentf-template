@@ -13,12 +13,17 @@ provider "libvirt" {
 
 {% for vm_name in vm_specs %}
 data "template_file" "user_data_{{ vm_name.hostname }}" {
-  template = file("${path.module}/{{ vm_name.hostname }}.cfg")
+  template = file("${path.module}/{{ vm_name.hostname }}-user-data.cfg")
+}
+
+data "template_file" "network_config_{{ vm_name.hostname }}" {
+  template = file("${path.module}/{{ vm_name.hostname }}-network-config.cfg")
 }
 
 resource "libvirt_cloudinit_disk" "user_data_{{ vm_name.hostname }}" {
   name      = "{{ vm_name.hostname }}.iso"
   user_data = data.template_file.user_data_{{ vm_name.hostname }}.rendered
+  network_config = data.template_file.network_config_{{ vm_name.hostname }}.rendered
   pool      = "{{ vm_name.image_pool }}"
 }{% endfor %}
 
@@ -65,9 +70,16 @@ resource "libvirt_domain" "{{ vm_name.hostname }}" {
   cpu {
     mode = "host-passthrough"
   }
+
+  console {
+    type        = "pty"
+    target_port = "0"
+    target_type = "serial"
+  }
+
   video {
     type = "qxl"
-  }
+  }  
   {% for interface in vm_name.networks %}
   network_interface {
     network_name   = "{{ interface.name }}"
