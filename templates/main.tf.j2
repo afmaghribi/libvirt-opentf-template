@@ -5,10 +5,11 @@ terraform {
       version = "0.8.3"
     }
   }
+  {% if http_backend %}backend "http" {}{% endif %}
 }
 
 provider "libvirt" {
-  uri = "qemu:///system"
+  {% if not http_backend %}uri = "qemu:///system"{% endif %}
 }
 
 {% for vm_name in vm_specs %}
@@ -27,7 +28,7 @@ resource "libvirt_cloudinit_disk" "user_data_{{ vm_name.hostname }}" {
   pool      = "{{ vm_name.image_pool }}"
 }{% endfor %}
 
-{% for network in networks_specs %}
+{% if network_create %}{% for network in networks_specs %}
 resource "libvirt_network" "{{ network.name }}" {
   name      = "{{ network.name }}"
   mode      = "nat"
@@ -40,7 +41,7 @@ resource "libvirt_network" "{{ network.name }}" {
   dns {
     enabled = true
   }
-}{% endfor %}
+}{% endfor %}{% endif %}
 
 {% for vm_name in vm_specs %}{% for disk in vm_name.disks %}{% if disk.device == "vda" %}
 resource "libvirt_volume" "{{ vm_name.hostname }}-{{ disk.device }}" {

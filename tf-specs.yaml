@@ -1,4 +1,6 @@
 tf_specs:
+  http_backend: true
+  network_create: false
   networks_specs:
   - name: "testing"
     subnet: "172.168.1.0/24"
